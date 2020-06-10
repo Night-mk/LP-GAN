@@ -10,16 +10,14 @@ import math
 ################################  线性计算  ################################
 
 '''安全加法协议 SecAdd'''
-
 def SecAdd(u1,v1,u2,v2):
 	f1 = u1 + v1
 	f2 = u2 + v2
 	return f1,f2
 
 '''安全乘法协议 SecMul'''
-def SecMul(u1,v1,u2,v2):
+def SecMul(u1,v1,u2,v2, bit_length=32):
     a1,a2,b1,b2,c1,c2 = mul_generate_random()
-    # print((a1+a2)*(b1+b2),",",(c1+c2))
 
     alpha1 = u1 - a1
     beta1 = v1 - b1
@@ -52,10 +50,9 @@ def mul_generate_random():
     return a1,a2,b1,b2,c1,c2
 
 '''安全乘法协议（矩阵形式）SecMul_matrix'''
-def SecMul_matrix(u1,v1,u2,v2):
+def SecMul_matrix(u1,v1,u2,v2, bit_length=32):
     a1,a2,b1,b2,c1,c2 = mul_generate_random()
-    print((a1+a2)*(b1+b2),",",(c1+c2))
-
+    # print((a1+a2)*(b1+b2),",",(c1+c2))
     # S1
     alpha1 = u1 - a1
     beta1 = v1 - b1
@@ -70,160 +67,160 @@ def SecMul_matrix(u1,v1,u2,v2):
     # S2
     S2_alpha = alpha1 + alpha2
     S2_beta = beta1 + beta2
-    f2 = c2 + b2 * S2_alpha + a2 * S2_beta + np.multiply(S2_alpha, S2_beta) 
+    f2 = c2 + b2 * S2_alpha + a2 * S2_beta + S2_alpha * S2_beta
+
+    # f1和f2的数量级检测，若超出2**(bit_length-2)，则将一方设置为1 [check时间还可以]
+    f1, f2 = check_mul_magnitude(f1, f2, bit_length)
 
     return f1,f2
 
-def test_secmul():
-    x1 = 5
-
+def check_mul_magnitude(f1,f2, bit_length):
+    f1_copy = f1.copy()
+    f1_copy[f1>2**(bit_length-1)]=1
+    f1_copy[f1<-2**(bit_length-1)]=1
+    if not (f1==f1_copy).all():
+        f2 = f1+f2-1
+    f2_copy = f2.copy()
+    f2_copy[f2>2**(bit_length-1)]=1
+    f2_copy[f2<-2**(bit_length-1)]=1
+    if not (f2==f2_copy).all(): # 判断是否修改过
+        f1 = f1+f2-1
+    return f1, f2
 
 ################################  非线性计算  ################################
 '''
-SecOr
+    安全或 SecOr（矩阵）
 '''
 def SecOr(u1,v1,u2,v2):
-    m1,m2 = SecMul(-u1,v1,-u2,v2)
-    
-    # S1
+    m1,m2 = SecMul_matrix(-u1,v1,-u2,v2)
     f1 = u1+v1+m1
     f2 = u2+v2+m2
     return f1, f2
 
 '''
-SecXor
+    安全异或 SecXor（矩阵）
 '''
 def SecXor(u1,v1,u2,v2):
-    m1,m2 = SecMul(-2*u1,v1,-2*u2,v2)
-    
-    # S1
+    m1,m2 = SecMul_matrix(-2*u1,v1,-2*u2,v2)
     f1 = u1+v1+m1
     f2 = u2+v2+m2
     return f1, f2
 
 
-################################  比较算法  ################################
-
-# precision>=16
-# 10进制移位计算
-# def float2Int(num, precision=16):
-#     num_int = int(math.floor(num*(10**precision)))
-#     return num_int
-
-def float2bin(num, precision=16):
-    bit_length = 32
-    # check the symbol
-    s = 0
-    if num<0: s=1
-
-    # transform it into positive integer
-    num = abs(num)
-    # break the number into integer and decimal part
-    integer = int(num)
-    decimal = num-integer
-    # convert integer part to bin
-    integer_binary = bin(integer)[2:]
-    # integer_binary1 = bin(integer)
-    # print("integer part: ", integer_binary1)
-    # print("integer part: ", integer_binary)
-
-    # convert binary part to bin
-    decimal_binary = dec2bin(decimal, precision)
+################################  安全比较算法  ################################
+'''
+    规定bit标准长度为32bit, 64bit
+    安全比较算法需要将输入先转换成整数int32，再转换成二进制进行比较，可以特殊判断0（无需进行转换）
+    由于机器学习的数据通常是浮点数，并且数据大小不会是个大数（都会Normalize到某个空间进行计算），所以可以将浮点数直接乘2^16或2^32（整数小数对半开）转换为大整数
     
-    # fill 0 if needed, handle symbol
-    num_bin = integer_binary+decimal_binary
-    length = len(num_bin)
+    ## 注：安全比较算法不会影响计算精度！！因为比完了，只是确定哪些数可以保留，这种
+'''
 
-    if length>bit_length-1: 
-        # if integer is too large, cut off the decimal part
-        num_bin=num_bin[:bit_length-1]
-    else:
-        # if the number length is not enough
-        while length<bit_length-1:
-            num_bin='0'+num_bin
-            length+=1
-    
-    num_bin=str(s)+num_bin
-    # print("len: ",len(num_bin))
+# 精度设置为小数点后2^(bit_length//2)位
+def float2int(num, bit_length=32):
+    return np.array(num*(2**(bit_length//2))).astype(np.int32)
 
+# 使用np将整数转为指定长度的二进制数据（如果超出长度则不受width限制）
+def numpy2bin(num, width, s):
+    '''
+        num: 正整数数据
+        width: 转成二进制的位数 31,63
+        s: 符号位
+        返回值：整数的二进制字符串表示矩阵 i.e.['00010']
+    '''
+    limit_num = 2**width
+    if num>limit_num: # 对溢出数据的处理,讲道理还不知道咋处理orz
+        num = np.mod(num, limit_num)
+        print('overflow')
+    return str(s)+np.binary_repr(num, width)
+
+'''整数转二进制（指定长度为bit_length位）'''
+def int2bin(num, bit_length=32):
+    # 传入的num一定是个整数ndarray
+    # num的范围是[-2**31~2**31]
+    bl = bit_length 
+    # 获取绝对值和符号位
+    s = np.zeros(num.shape).astype(np.int) #一定要转为int类型
+    s[num<0] = 1
+    num_abs = np.abs(num)
+    # 函数向量化,可以使用np.frompyfunc对numpy的所有数据进行处理，并返回对应类型（ndarray）的数据 np.frompyfunc(func_x, 1, 1)
+    # func_x指的是你要使用的函数，第二个参数为func中的参数个数，第三个参数为func中的返回值的个数
+    func_ = np.frompyfunc(numpy2bin, 3, 1)
+    num_bin = func_(num_abs, bl-1, s) # 返回了ndarray类型的数据！
     return num_bin
 
-'''
-decimal->binary
-dec2bin
-'''
-def dec2bin(dec, precision=16):
-    r = 0
-    binary =''
-    while dec!=0:
-        dec = dec*2
-        binary+=str(int(dec))
-        dec = dec-int(dec)
-        r+=1
-        if r==precision: break
-    length = len(binary)
-    while length<precision:
-        binary+='0'
-        length+=1
+'''浮点数转为二进制表示'''
+def float2bin(num, bit_length=32):
+    int_data = float2int(num, bit_length)
+    return int2bin(int_data, bit_length)
+    
+# 本地计算offline，初始化t1, t2
+def initT1T2(t1, t2, bit_length=32):
+    t1 = np.random.randint(-2**(bit_length//2), 2**(bit_length//2))
+    t2 = 1-t1
+    return t1, t2
 
-    return binary
+# 将字符串数组转换为numpy数组
+def str2arr(str_num, arr_shape):
+    str_num = str_num.reshape(-1)
+    str_all_num = ''
+    for i in str_num: 
+        str_all_num +=i # 字符串是'100...01'第0位是最高位
+    return np.array(list(str_all_num)).astype(np.int).reshape(arr_shape)
 
 '''
-SecMSB
+    安全最重要比特协议 SecMSB
 '''
 def SecMSB(u1, u2, bit_length=32):
     L = bit_length
-    t1 = ndarray((L+1,), int)
-    t2 = ndarray((L+1,), int)
-    f1 = ndarray((L,), int)
-    f2 = ndarray((L,), int)
-    zeta1 = 0
-    zeta2 = 0
+    u1_shape = u1.shape
+    print('u1_shape: ',u1_shape)
+    u_ori_shape = list(u1_shape)[:-1]
+    # t_shape = u_ori_shape.copy().append(L+1)
+    t_shape = u_ori_shape.copy()
+    t_shape.append(L+1)
+    print('u_ori_shape: ',u_ori_shape)
+    print('t_shape: ',t_shape)
+
+    t1 = np.zeros(t_shape).astype(np.int) # t1=[input_shape, L+1]
+    t2 = np.zeros(t_shape).astype(np.int)
+    f1 = np.zeros(u1_shape).astype(np.int)
+    f2 = np.zeros(u1_shape).astype(np.int)
+
+    # 初始化zeta
+    zeta1 = np.zeros(u_ori_shape).astype(np.int)
+    zeta2 = np.zeros(u_ori_shape).astype(np.int)
 
     # offline
-    t1[L] = np.random.randint(-5, 5)
-    t2[L] = 1-t1[L]
-    # print("ori u1, u2:", u1, u2)
-
+    # 初始化t1, t2（t1+t2=1） 采用切片方法
+    t1[...,0] = np.random.randint(-2**(L//2), 2**(L//2))
+    t2[...,0] = 1-t1[...,0]
+     
     # online
-    for i in range(L-1, -1, -1):
-        # print("t1,t2: ", t1[i+1], t2[i+1])
-        # print("u1,u2: ", 1-int(u1[i]), -int(u2[i]))
-        t1[i], t2[i] = SecMul(t1[i+1], 1-u1[i], t2[i+1], u2[i])
-
-        # 避免迭代后的secMul爆炸
-        if t1[i] > 10e3:
-            t1[i]-=t1[i]
-            t2[i]+=t1[i]
-        if t1[i] < -10e3:
-            t1[i]+=t1[i]
-            t2[i]-=t1[i]
-        if t2[i] > 10e3:
-            t2[i]-=t2[i]
-            t1[i]+=t2[i]
-        if t2[i] < -10e3:
-            t2[i]+=t2[i]
-            t1[i]-=t2[i]
-        # print("t1,t2: ", t1[i], t2[i])
-    
-    for i in range(L-1, -1, -1):
-        # S1
-        f1[i] = t1[i+1]-t1[i]
-        # S2
-        f2[i] = t2[i+1]-t2[i]
+    for i in range(0, L):
+        # t1[i], t2[i] = SecMul(t1[i+1], 1-u1[i], t2[i+1], u2[i])
+        t1[...,i+1], t2[...,i+1] = SecMul_matrix(t1[...,i], 1-u1[...,i], t2[...,i], -u2[...,i])
+        # print('t1+t2: ',t1[...,i]+t2[...,i])
 
     for i in range(0, L):
-        zeta1 += f1[i]
-        zeta2 += f2[i]
-    
-    # print(f1)
-    # print(f2)
+        # S1
+        # f1[i] = t1[i+1]-t1[i]
+        f1[...,i] = t1[...,i]-t1[...,i+1]
+        # S2
+        # f2[i] = t2[i+1]-t2[i]
+        f2[...,i] = t2[...,i]-t2[...,i+1]
+
+    for i in range(0, L):
+        # zeta1 += f1[i]
+        zeta1 += f1[...,i]
+        # zeta2 += f2[i]
+        zeta2 += f2[...,i]
 
     return f1,zeta1,f2,zeta2
 
-def DFC(num, precision=16):
-    binary = float2bin(num, precision)
-    L = precision*2-1
+def DFC(num, bit_length=32):
+    binary = float2bin(num, bit_length)
+    L = bit_length-1
     return binary[:L]
 
 '''
@@ -275,67 +272,14 @@ def SecCmp(u1,v1,u2,v2, bit_length=32):
     return f1, f2
 
 def test():
-    # u1=56
-    # u2=23
-    # v1=56
-    # v2=6
-    # add
-    # f1,f2 = SecAdd(u1,v1,u2,v2)
-    # print("f1:",f1,";f2:",f2,";result:",f1+f2,"real:",u1+v1+u2+v2)
-
-    # mul
-    # f1,f2 = SecMul(u1,v1,u2,v2)
-    # print("f1:",f1,";f2:",f2,";result:",f1+f2,"real:",(u1+u2)*(v1+v2))
-
-    # mul_matrix
-    # u1=np.random.randint(-2**16, 2**16, (5,5))
-    # u2=np.random.randint(-2**16, 2**16, (5,5))
-    # v1=np.random.randint(-2**16, 2**16, (5,5))
-    # v2=np.random.randint(-2**16, 2**16, (5,5))
-    # f1,f2 = SecMul_matrix(u1,v1,u2,v2)
-    # print("f1:",f1,"\n f2:",f2,"\n result:",f1+f2,"\n real:",np.multiply(u1+u2,v1+v2))
+    '''float2Int'''
+    u = np.random.randn(2,4,2)
+    print('u: \n', u)
+    print('u[]: \n',u[..., 0])
+    u_bin = float2bin(u, 32)
+    print('u_bin: \n', u_bin)
 
 
-    # or
-    # u = np.random.randint(0,2)
-    # v = np.random.randint(0,2)
-    # u1 = np.random.randint(-2**16, 2**16)
-    # u2 = u-u1
-    # v1 = np.random.randint(-2**16, 2**16)
-    # v2 = v-v1
-    # f1, f2 = SecOr(u1,v1,u2,v2)
-    # print("f1:",f1,";f2:",f2,"u:",u,"v:",v,";result:",f1+f2,"real:", u or v)
-    
-    # xor
-    # f1, f2 = SecXor(u1,v1,u2,v2)
-    # print("f1:",f1,";f2:",f2,"u:",u,"v:",v,";result:",f1+f2)
+if __name__ == '__main__':
+    test()
 
-    # cmp
-    # dec = dec2bin(0.98954910, precision=16)
-    # print(dec)
-    # r = float2bin(98989.62265, 16)
-    # print(r)
-    
-    # u1 = float2bin(78, 16)
-    # u2 = float2bin(7889, 16)
-    # u1 = DFC(78, 16)
-    # u2 = DFC(7889, 16)
-    # u2 = float2bin(996, 16)
-    # print(u1,u2)
-    # f1,zeta1,f2,zeta2 = SecMSB(u1, u2)
-    # print(f1+f2, zeta1, zeta2, zeta1+zeta2)
-
-    # u = np.random.randint(-2**16, 2**16)
-    u = np.random.uniform(-2**16, 2**16)
-    v = np.random.uniform(-2**16, 2**16)
-    # v = np.random.randint(-2**16, 2**16)
-    u1 = np.random.randint(10, 20)
-    u2 = u-u1
-    v1 = np.random.randint(10, 20)
-    v2 = v-v1
-    print("u,v:", u,v)
-    f1, f2  = SecCmp(u1,v1,u2,v2)
-    print(f1+f2)
-
-if __name__ = '__main__':
-    test_secmul()
