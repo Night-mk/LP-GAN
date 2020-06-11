@@ -98,17 +98,65 @@ def secmsb_m_test():
     
 
 '''
-    测试：安全矩阵比较算法 SecCmp_Matrix
+    测试：安全矩阵比较算法 SecCmp_Matrix（成功）
 '''
 def seccmp_m_test():
-    print('a')
-
+    batchsize = 10000
+    num = 1
+    bit_length = 32
+    u = np.random.randn(batchsize,num)
+    v = np.random.randn(batchsize,num)
+    # print('u: \n', u)
+    # print('v: \n', v)
+    u1 = np.random.randn(batchsize,num)
+    u2 = u-u1
+    v1 = np.random.randn(batchsize,num)
+    v2 = v-v1
+    f1, f2, time = secp.SecCmp(u1, v1, u2, v2, bit_length)
+    
+    # print('f1+f2: \n',f1+f2)
 
 '''
     测试：安全矩阵求根算法 SSqrt_Matrix
 '''
+# 测试SRC算法
+def secrc_m_test():
+    batchsize = 1
+    num = 20
+    bit_length = 32
+    # u = np.abs(np.random.randn(batchsize,num))
+    u = np.random.randint(0, 2**8, size=(batchsize,num))
+    # print('u: \n', u)
+    # u1 = np.random.randn(batchsize,num)
+    u1 = np.random.randint(-2**8, 2**8, size=(batchsize,num))
+    u2 = u-u1
+    # print('u1: \n', u1)
+    # print('u2: \n', u2)
+
+    start_time = time.time()
+    m1,m2,p = secp.SecRC(u1, u2, bit_length=32)
+    end_time = time.time()
+    print('p: \n', m1+m2)
+    print('time consume: \n',(end_time-start_time)*1000)
+
 def ssqrt_m_test():
-    print('a')
+    batchsize = 1
+    num = 100
+    bit_length = 32
+    u = np.abs(np.random.randn(batchsize,num))
+    # u = np.random.randint(0, 2**8, size=(batchsize,num))
+    # print('u: \n', u)
+    u1 = np.random.randn(batchsize,num)
+    # u1 = np.random.randint(-2**8, 2**8, size=(batchsize,num))
+    u2 = u-u1
+    start_time = time.time()
+    f1, f2 = secp.SSqrt(u1, u2, 5, inverse_required=True, bit_length=bit_length)
+    end_time = time.time()
+    print('time consume: \n',(end_time-start_time)*1000)
+    # print('f: \n', f1+f2)
+    # print('u.sqrt: \n', np.sqrt(u))
+    print('sqrt err: \n', f1+f2-1/np.sqrt(u))
+    print('sqrt err mean: \n', np.mean(f1+f2-1/np.sqrt(u)))
 
 
 '''
@@ -134,5 +182,9 @@ if __name__ == '__main__':
     # secmul_m_test()
     # secor_m_test()
     # secxor_m_test()
-    secmsb_m_test()
+    # secmsb_m_test()
     # secmul_m_test_fix()
+    # for i in range(5):
+    #     seccmp_m_test()
+    # secrc_m_test()
+    ssqrt_m_test()
