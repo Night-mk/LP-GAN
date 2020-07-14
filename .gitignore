@@ -3,5 +3,5 @@ data/*
 
 # IDE files
 __pycache__/*
-.vs/*
+.vscode/*
 model_save/*
