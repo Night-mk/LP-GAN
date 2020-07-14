@@ -1,7 +1,8 @@
 # dataset
 data/*
+model_save/*
 
 # IDE files
 __pycache__/*
 .vscode/*
-model_save/*
+layers/__pycache__/*
